@@ -213,7 +213,7 @@ def main():
                          f"Block: {used:.1f}h of {bh}h\n"
                          f"Deadline: {deadline}")
 
-                if save_event(store, cal, f"[Work] {args.project}",
+                if save_event(store, cal, f"{args.project}",
                               free_start, free_end, notes):
                     print(f"  ✅  {day.strftime('%a %b %d')}  "
                           f"{free_start.strftime('%I:%M %p')} - "

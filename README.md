@@ -16,12 +16,13 @@ pip install pyobjc-framework-EventKit
 
 ## Usage:
 
-Only works using Terminal app of MacOS
+Only works using Terminal app of MacOS.
+These examples add different times: 2d -> two days and 4h -> four hours.
 
 ```bash
-python work_planner.py --project "heat island modelling" --time 2d --deadline 25-05  # Adding two days to the Heat island modelling project
+python work_planner.py --project "Wind energy modelling" --time 2d --deadline 25-05  
 ```
 
 ```bash
-python work_planner.py --project "Plot meteo data" --time 4h --deadline 30-05  # Adding four hours to plot data 
+python work_planner.py --project "Plot meteo data" --time 4h --deadline 30-05 
 ```

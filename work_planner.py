@@ -6,12 +6,13 @@ import EventKit
 import Foundation
 
 WORK_BLOCKS = [
-    (8,  30, 2.0),   # 08:30 - 10:00
+    (8,  30, 2.0),   # 08:30 - 10:30
     (10, 30, 2.0),   # 10:30 - 12:30
     (13, 30, 2.0),   # 13:30 - 15:30
     (15, 30, 2.0),   # 15:30 - 17:30
 ]
 
+HOURS_PER_DAY = 8   # total available work hours per day (8:30-17:30 minus break)
 
 def build_store():
     store = EventKit.EKEventStore.alloc().init()
@@ -128,7 +129,32 @@ def find_free_slot(store, day: date, sh: int, sm: int, needed_hours: float):
             return gap_start, gap_start + timedelta(hours=used), used
 
     return None   # block is fully booked
+# ── Time parsing (replaces --hours float) ────────────────────────────────────
 
+def parse_time(raw: str) -> float:
+
+    raw = raw.strip().lower()
+
+    if raw.endswith('h'):
+        try:
+            return float(raw[:-1])
+        except ValueError:
+            raise argparse.ArgumentTypeError(
+                f"Cannot parse '{raw}'. Use format: 8h or 5d"
+            )
+
+    if raw.endswith('d'):
+        try:
+            days = float(raw[:-1])
+            return days * HOURS_PER_DAY
+        except ValueError:
+            raise argparse.ArgumentTypeError(
+                f"Cannot parse '{raw}'. Use format: 8h or 5d"
+            )
+
+    raise argparse.ArgumentTypeError(
+        f"Cannot parse '{raw}'. Use 'h' for hours or 'd' for days — e.g. 8h or 5d"
+    )
 
 def save_event(store, cal, title, start, end, notes):
     ev = EventKit.EKEvent.eventWithEventStore_(store)
@@ -157,41 +183,24 @@ def parse_deadline(raw):
         f"Cannot parse '{raw}'. Use DD-MM, DD-MM-YYYY or YYYY-MM-DD."
     )
 
+# ── Scheduling ────────────────────────────────────────────────────────────────
 
-def main():
-    parser = argparse.ArgumentParser(
-        prog="work_planner.py",
-        description="Schedule work blocks in macOS Calendar.",
-        epilog="Example: python work_planner.py --project 'API migration' --hours 12 --deadline 25-05"
-    )
-    parser.add_argument("--project",  required=True, help="Project name")
-    parser.add_argument("--hours",    required=True, type=float, help="Total hours to schedule")
-    parser.add_argument("--deadline", required=True, help="Deadline: DD-MM | DD-MM-YYYY | YYYY-MM-DD")
-    args = parser.parse_args()
+def do_work(store, project, total_hours, deadline):
+    cal       = get_cal(store)
+    rem       = total_hours
+    day       = date.today() + timedelta(days=1)
+    n         = 0
 
-    if args.hours <= 0:
-        sys.exit("❌  --hours must be a positive number.")
-
-    deadline  = parse_deadline(args.deadline)
-    today     = date.today()
-    start_day = today + timedelta(days=1)
-
-    if deadline < start_day:
+    if deadline < day:
         sys.exit("❌  Deadline must be at least 1 day from today.")
 
-    store = build_store()
-    cal   = get_cal(store)
-    rem   = args.hours
-    day   = start_day
-    n     = 0
-
-    print(f"\n  Project   : {args.project}")
-    print(f"  Hours     : {args.hours}h")
-    print(f"  Starting  : {start_day.strftime('%A, %B %d %Y')}")
-    print(f"  Deadline  : {deadline.strftime('%A, %B %d %Y')}\n")
+    print(f"\n  Project  : {project}")
+    print(f"  Time     : {total_hours}h total")
+    print(f"  Starting : {day.strftime('%A, %B %d %Y')}")
+    print(f"  Deadline : {deadline.strftime('%A, %B %d %Y')}\n")
 
     while rem > 0 and day <= deadline:
-        if day.weekday() <= 4:                              # Monday–Friday
+        if day.weekday() <= 4:
             for sh, sm, bh in WORK_BLOCKS:
                 if rem <= 0:
                     break
@@ -199,26 +208,23 @@ def main():
                 slot = find_free_slot(store, day, sh, sm, min(bh, rem))
 
                 if slot is None:
-                    # Block fully occupied — print once and move on
                     block_start = datetime(day.year, day.month, day.day, sh, sm)
                     block_end   = block_start + timedelta(hours=bh)
                     print(f"  ⏭️   {day.strftime('%a %b %d')}  "
                           f"{block_start.strftime('%I:%M %p')} - "
-                          f"{block_end.strftime('%I:%M %p')}  "
-                          f"(busy — skipped)")
+                          f"{block_end.strftime('%I:%M %p')}  (busy — skipped)")
                     continue
 
                 free_start, free_end, used = slot
-                notes = (f"Project: {args.project}\n"
+                notes = (f"Project: {project}\n"
                          f"Block: {used:.1f}h of {bh}h\n"
                          f"Deadline: {deadline}")
 
-                if save_event(store, cal, f"{args.project}",
+                if save_event(store, cal, f"{project}",
                               free_start, free_end, notes):
                     print(f"  ✅  {day.strftime('%a %b %d')}  "
                           f"{free_start.strftime('%I:%M %p')} - "
-                          f"{free_end.strftime('%I:%M %p')}  "
-                          f"({used:.1f}h)")
+                          f"{free_end.strftime('%I:%M %p')}  ({used:.1f}h)")
                     n  += 1
                     rem = round(rem - used, 2)
                 else:
@@ -229,9 +235,38 @@ def main():
     print()
     if rem > 0:
         print(f"⚠️  {rem:.1f}h could not fit before the deadline.")
-        print("   Try a later deadline or reduce total hours.")
+        print("   Try a later deadline or reduce total time.")
     else:
         print(f"🎉  Done — {n} event(s) added to 'Work' calendar.")
+
+
+# ── Entry point ───────────────────────────────────────────────────────────────
+
+
+def main():
+    parser = argparse.ArgumentParser(
+        prog="work_planner.py",
+        description="Schedule work blocks in macOS Calendar.",
+        epilog="Example: python work_planner.py --project 'API migration' --hours 12 --deadline 25-05"
+    )
+    parser.add_argument("--project",  required=True, help="Project name")
+    parser.add_argument("--time", required=True, metavar="DURATION", help="Time to schedule: 8h (hours) or 5d (days)")
+    parser.add_argument("--deadline", required=True, help="Deadline: DD-MM | DD-MM-YYYY | YYYY-MM-DD")
+    args = parser.parse_args()
+
+    # if args.hours <= 0:
+    #     sys.exit("❌  --hours must be a positive number.")
+
+    total_hours = parse_time(args.time)
+    if total_hours <= 0:
+        sys.exit("❌  --time must be a positive value.")
+
+    deadline = parse_deadline(args.deadline)
+    store    = build_store()
+
+    do_work(store, args.project, total_hours, deadline)
+
+
 
 
 if __name__ == "__main__":

@@ -1,4 +1,4 @@
-# macOS Work Planner
+# Calendar Work Planner - macOS 
 
 ## Requires: 
 

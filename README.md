@@ -3,11 +3,11 @@
 ## Requires: 
 
 ``` bash
-conda create -n mac_devs python=3.11
+conda create -n calendar python=3.11
 ```
 
 ``` bash
-conda activate mac_devs
+conda activate calendar
 ```
 
 ``` bash
